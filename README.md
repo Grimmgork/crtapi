@@ -1,5 +1,5 @@
 # crtapi
-Main interface for controlling the crt monitor
+Ruby REST interface for controlling the whole crt monitor system. It acts as a fascade for the local [visctl](https://github.com/Grimmgork/visctl).
 
 ## Setup:
 place this *system.json* file in the directory of *app.rb*:
