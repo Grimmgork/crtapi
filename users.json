@@ -1,0 +1,12 @@
+[
+    {
+	   "name":"eric",
+	   "api_key":"xxxxxxxxxxxxxxxxx",
+	   "tier":2
+    },
+    {
+	   "name":"milly",
+	   "api_key":"xxxxxxxxxxxxxxxxx",
+	   "tier":0
+    }
+]
