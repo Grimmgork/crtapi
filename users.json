@@ -1,12 +1,12 @@
 [
-    {
-	   "name":"eric",
-	   "api_key":"xxxxxxxxxxxxxxxxx",
-	   "tier":2
-    },
-    {
-	   "name":"milly",
-	   "api_key":"xxxxxxxxxxxxxxxxx",
-	   "tier":0
-    }
+	{
+		"name":"eric",
+		"apikey":"4a6451215792cba6f35d7a12d852f6c1",
+		"tier":2
+	},
+	{
+		"name":"milly",
+		"apikey":"4a6451215792cba6f35d7a12d852f6c0",
+		"tier":0
+	}
 ]

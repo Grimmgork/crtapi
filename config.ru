@@ -1,47 +1,92 @@
 require "roda"
 require 'uri'
 require 'net/http'
+require 'json'
+require 'securerandom'
+require 'sqlite3'
+
+User = Struct.new(:name, :apikey, :tier)
 
 class Users
 
-end
+	def initialize()
+		@db = SQLite3::Database.open 'test.db'
+		@db.execute "CREATE TABLE IF NOT EXISTS images(path TEXT, thumbs_up INT)"
+		text = File.open("users.json").read
+		hash = JSON.parse(text)
+		@users = Array.new
+		hash.each do |e|
+			@users.push(User.new(e["name"], e["apikey"], e["tier"]))
+		end
+	end
 
-class Wlan
+	def GetNewApiKey(apikey)
+		key = SecureRandom.hex
+		GetUser(apikey).apikey = key
+		Save()
+		return key
+	end
 
-end
+	def Save()
+		#puts JSON.generate(@users.)
+		# File.open("users.json", "w") { |f| f.write JSON.generate(@users) }
+	end
 
-class Config
+	def GetUser(apikey)
+		if apikey.nil? || apikey.empty?
+			return nil
+		end
 
+		@users.each do |u|
+			if(u.apikey == apikey)
+				return u
+			end
+		end
+
+		return nil
+	end
+
+	def GetUserByName(name)
+		if name.nil? || name.empty?
+			return nil
+		end
+
+		@users.each do |u|
+			if(u.name == name)
+				return u
+			end
+		end
+
+		return nil
+	end
+
+	def UpsertUser(user)
+		
+	end
 end
 
 class App < Roda
+
 	def ForwardRequest(req)
 		# req -> Net::HTTP::Post.new(path)
 		https = Net::HTTP.new("localhost", 5000)
 		return https.request(req)
 	end
 
-	def GetAccessLevel(apiKey)
-		#return -1 if not present
-		if(apiKey == "kek")
-			return 1
-		end
-		return -1
-	end
+	users = Users.new()
 
 	route do |r|
-
 		apikey = env["HTTP_X_API_KEY"]
-		tier = GetAccessLevel(apikey)
+		user = users.GetUser(apikey)
+
+		if user.nil?
+			response.status = 403
+			response.write "Permission denied!"
+			r.halt
+		end
 		
 		#/switch
 		r.on "switch" do
-			if(tier < 0)
-				response.status = 403
-				response.write "Permission denied!"
-				r.halt
-			end
-
 			#/switch/[template]
 			r.is String do |template|
 				#POST /switch/[template]
@@ -64,7 +109,7 @@ class App < Roda
 
 		#/templates
 		r.on "templates" do
-			if(tier < 1)
+			if(user.tier < 1)
 				response.status = 403
 				response.write "Permission denied!"
 				r.halt
@@ -87,7 +132,7 @@ class App < Roda
 
 		#/config
 		r.on "config" do
-			if(tier < 2)
+			if(user.tier < 2)
 				response.status = 403
 				response.write "Permission denied!"
 				r.halt
@@ -117,21 +162,35 @@ class App < Roda
 
 		#/key
 		r.on "key" do
-			if(tier < 0)
-				response.status = 403
-				response.write "Permission denied!"
-				r.halt
-			end
 			#/key/[username]
 			r.is String do |username|
 				#GET /key/[username]
 				r.get do
-					"kek"
+					edituser = users.GetUserByName(username)
+					if(edituser.nil?)
+						response.status = 404
+						response.write "Username not found!"
+						r.halt
+					end
+
+					if(user.tier < edituser.tier)
+						response.status = 403
+						response.write "Permission denied!"
+						r.halt
+					end
+
+					if(user.tier == edituser.tier && user.name != edituser.name)
+						response.status = 403
+						response.write "Permission denied!"
+						r.halt
+					end
+
+					users.GetNewApiKey(edituser.apikey)
 				end
 			end
 		end
 	end
 end
 
-system("sudo systemctl start templates_sshkey_cleanup")
+# system("sudo systemctl start templates_sshkey_cleanup")
 run App
