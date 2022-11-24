@@ -3,44 +3,25 @@ require 'uri'
 require 'net/http'
 require 'json'
 require 'securerandom'
-require 'sqlite3'
 
 User = Struct.new(:name, :apikey, :tier)
 
 class Users
-
 	def initialize()
-		@db = SQLite3::Database.open 'test.db'
-		@db.execute "CREATE TABLE IF NOT EXISTS images(path TEXT, thumbs_up INT)"
-		text = File.open("users.json").read
-		hash = JSON.parse(text)
-		@users = Array.new
-		hash.each do |e|
-			@users.push(User.new(e["name"], e["apikey"], e["tier"]))
-		end
+		
 	end
 
 	def GetNewApiKey(apikey)
 		key = SecureRandom.hex
-		GetUser(apikey).apikey = key
-		Save()
+		user = GetUserByApiKey(apikey)
+		user.apikey = key
+		UpsertUser(user)
 		return key
 	end
 
-	def Save()
-		#puts JSON.generate(@users.)
-		# File.open("users.json", "w") { |f| f.write JSON.generate(@users) }
-	end
-
-	def GetUser(apikey)
+	def GetUserByApiKey(apikey)
 		if apikey.nil? || apikey.empty?
 			return nil
-		end
-
-		@users.each do |u|
-			if(u.apikey == apikey)
-				return u
-			end
 		end
 
 		return nil
@@ -59,10 +40,6 @@ class Users
 
 		return nil
 	end
-
-	def UpsertUser(user)
-		
-	end
 end
 
 class App < Roda
@@ -77,7 +54,7 @@ class App < Roda
 
 	route do |r|
 		apikey = env["HTTP_X_API_KEY"]
-		user = users.GetUser(apikey)
+		user = users.GetUserByApiKey(apikey)
 
 		if user.nil?
 			response.status = 403
@@ -117,7 +94,7 @@ class App < Roda
 
 			#GET /templates/key
 			r.get "key" do
-				res = `sudo bash /trinitron/api/addkey.sh`
+				res = `sudo perl /trinitron/api/keys.pl #{user.name} new`
 				res
 			end
 
