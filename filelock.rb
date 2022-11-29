@@ -24,5 +24,6 @@ class FileLock
 			@file.flock(File::LOCK_UN)
 			@file.close()
 		end
+		@file = nil
 	end
 end

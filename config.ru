@@ -14,12 +14,28 @@ class App < Roda
 		return https.request(req)
 	end
 
+	def get_new_templates_sshkey(username)
+		stdout, stderr, status = Open3.capture3("perl", "/trinitron/api/keys.pl", username, "new")
+		if status != 0
+			return nil
+		end
+		return stdout
+	end
+
+	def remove_templates_sshkey(username)
+		stdout, stderr, status = Open3.capture3("perl", "/trinitron/api/keys.pl", username)
+		if status != 0
+			return false
+		end
+		return true
+	end
+
 	route do |r|
 		@users = Users.new()
 		apikey = env["HTTP_APIKEY"]
-		user = @users.get_user_by_apikey(apikey)
+		login = @users.get_user_by_apikey(apikey)
 
-		if user.nil?
+		if login.nil?
 			response.status = 403
 			response.write "Permission denied!"
 			r.halt
@@ -49,7 +65,7 @@ class App < Roda
 
 		# /templates
 		r.on "templates" do
-			if(user["tier"] < 1)
+			if(login["tier"] < 1)
 				response.status = 403
 				response.write "Permission denied!"
 				r.halt
@@ -57,13 +73,13 @@ class App < Roda
 
 			# GET /templates/key
 			r.get "key" do
-				stdout, stderr, status = Open3.capture3("perl", "/trinitron/api/keys.pl", user["name"], "new")
-				if status != 0
+				sshkey = get_new_templates_sshkey(login["name"]) 
+				if not sshkey
 					response.status = 500
 					response.write "internal error"
 					r.halt
 				end
-				response.write stdout
+				response.write sshkey
 				r.halt
 			end
 
@@ -80,7 +96,7 @@ class App < Roda
 		r.on "users" do
 			# /users/new
 			r.on "new" do
-				if(user["tier"] < 3)
+				if(login["tier"] < 3)
 					response.status = 403
 					response.write "Permission denied!"
 					r.halt
@@ -115,7 +131,7 @@ class App < Roda
 				# GET /users/[name]
 				r.get do
 					# only tier 2 should inspect other users
-					if edituser["name"] != user["name"]
+					if edituser["name"] != login["name"]
 						if(user.tier < 2)
 							response.status = 403
 							response.write "Permission denied!"
@@ -127,7 +143,7 @@ class App < Roda
 					r.halt
 				end
 
-				if(user["tier"] < 2 || user["tier"] <= edituser["tier"])
+				if(login["tier"] < 2 || login["tier"] <= edituser["tier"])
 					response.status = 403
 					response.write "Permission denied!"
 					r.halt
@@ -147,7 +163,7 @@ class App < Roda
 				end
 			end
 
-			if(user["tier"] < 2)
+			if(login["tier"] < 2)
 				response.status = 403
 				response.write "Permission denied!"
 				r.halt
@@ -167,7 +183,7 @@ class App < Roda
 			r.is String do |username|
 				# GET /key/[username]
 				r.get do
-					if(user["tier"] < 2)
+					if(login["tier"] < 2)
 						response.status = 403
 						response.write "Permission denied!"
 						r.halt
@@ -181,22 +197,24 @@ class App < Roda
 						r.halt
 					end
 
-					if(user["name"] == edituser["name"])
+					if(login["name"] == edituser["name"])
 						response.status = 400
 						response.write "cant reset own apikey here, use GET /key instead!"
 						r.halt
 					end
 
-					response.status = 200
+					remove_templates_sshkey(edituser["name"])
 					response.write @users.get_new_apikey(edituser["name"])
+					response.status = 200
 					r.halt
 				end
 			end
 
 			# GET /key
 			r.get do
+				remove_templates_sshkey(login["name"])
+				response.write @users.get_new_apikey(login["name"])
 				response.status = 200
-				response.write @users.get_new_apikey(user["name"])
 				r.halt
 			end
 		end
