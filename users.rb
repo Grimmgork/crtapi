@@ -2,110 +2,117 @@ require 'securerandom'
 
 require './filelock.rb'
 
+User = Struct.new(:name, :apikey, :tier)
+
 class Users < FileLock
 
 	def initialize()
-		super("users.json")
-		@index = Hash.new
-		@root.each_with_index do |u, i|
-			@index[u["name"]] = i
+		super("auth.csv")
+
+		@users = []
+		read_file_lines do |l|
+			v = l.split("|",3)
+			@users.push(User.new(v[0], v[1], v[2].to_i))
 		end
 
-		# make sure there is always a root user
+		# make sure there is always a root user with tier 3
 		if create_user("root")
-			update_user({"name" => "root", "tier" => 3})
+			@users[get_user_index_by_name("root")].tier = 3
+		end
+	end
+
+	def serialize_content
+		@users.each do |u|
+			yield "#{u.name}|#{u.apikey}|#{u.tier}\n"
 		end
 	end
 
 	def get_new_apikey(name)
-		puts @index
-		h = @root[@index[name]]
-		if h.nil?
+		if name.nil? || name.empty?
 			return nil
 		end
 		key = SecureRandom.hex(10)
-		h["apikey"] = key
+		@users[get_user_index_by_name(name)].apikey = key
 		report_change()
 		return key
+	end
+
+	def get_all_users_as_hash
+		res = []
+		@users.each_with_index do |u, i|
+			name, tier = get_user_data(i)
+			res.push({"name" => name, "tier" => tier})
+		end
+		return res
 	end
 
 	def get_user_by_apikey(apikey)
 		if apikey.nil? || apikey.empty?
 			return nil
 		end
-		@root.each do |u|
-			ukey = u["apikey"]
-			if(ukey != nil && ukey == apikey)
-				return { "name" => u["name"], "tier" => u["tier"] }
+		@users.each_with_index do |u, i|
+			if u.apikey == apikey
+				return get_user_data(i)
 			end
 		end
 		return nil
 	end
 
-	def extract_user_from_index(hash)
-		res = {}
-		["name", "tier"].each do |k|
-			res[k] = hash[k]
-		end
-		return res
-	end
-
-	def get_all_users_as_hash()
-		users = []
-		@root.each do |u|
-			users.push(get_user_by_name(u["name"]))
-		end
-		return users
-	end
-
 	def get_user_by_name(name)
-		i = @index[name]
-		if i.nil?
+		return get_user_data(get_user_index_by_name(name))
+	end
+
+	def get_user_data(index)
+		if index.nil?
 			return nil
 		end
-		return extract_user_from_index(@root[i])
+		return @users[index].name, @users[index].tier
 	end
 
-	def update_user(user)
-		if @index[user["name"]].nil? || user["name"] == "root"
+	def get_user_index_by_name(name)
+		@users.each_with_index do |u, i|
+			if u.name == name
+				return i
+			end
+		end
+		return nil
+	end
+
+	def rename_user(name, newname)
+		i = get_user_index_by_name(name)
+		if i.nil? || name == "root" #|| not get_user_index_by_name(newname).nil?
 			return false
 		end
-		u = @root[@index[user["name"]]]
-		["name", "tier"].each do |k|
-			u[k] = user[k]
-		end
+		@users[i].name = newname
 		report_change()
 		return true
 	end
 
-	def rename_user(name, newname)
-		if not @index[newname].nil? || @index[name].nil?
+	def set_user_tier(name, tier)
+		i = get_user_index_by_name(name)
+		if i.nil? || name == "root"
 			return false
 		end
-		i = @index[name]
-		@root[i]["name"] = newname
-		@index.delete(name)
-		@index[newname] = i
+		@users[i].tier = tier
 		report_change()
 		return true
 	end
 
 	def remove_user(name)
-		if @index[name].nil? || name == "root"
+		i = get_user_index_by_name(name)
+		if i.nil? || name == "root"
 			return false
 		end
-		@root.delete_at(@index[name])
-		@index.delete(name)
+		@users.delete_at(i)
 		report_change()
 		return true
 	end
 
 	def create_user(name)
-		if @index[name]
+		if not get_user_index_by_name(name).nil?
 			return nil
 		end
-		@root.push({"name" => name, "tier" => 0})
-		@index[name] = @root.length-1
+		@users.push(User.new(name, nil, 0))
 		report_change()
 		return get_new_apikey(name)
 	end

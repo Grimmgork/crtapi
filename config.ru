@@ -30,15 +30,22 @@ class App < Roda
 		return true
 	end
 
+	def respond(req, res, content, status=200)
+		res.status = status
+		res.write content
+      	req.halt
+	end
+
+	def respond_permission_denied(req, res)
+		respond(req, res, "permission denied!", 403)
+	end
+
 	route do |r|
 		@users = Users.new()
-		apikey = env["HTTP_APIKEY"]
-		login = @users.get_user_by_apikey(apikey)
+		login_name, login_tier = @users.get_user_by_apikey(env["HTTP_APIKEY"])
 
-		if login.nil?
-			response.status = 403
-			response.write "Permission denied!"
-			r.halt
+		if login_name.nil?
+			respond_permission_denied(r, response)
 		end
 		
 		#/switch
@@ -48,47 +55,36 @@ class App < Roda
 				#POST /switch/[template]
 				r.post do
 					res = forward_request(Net::HTTP::Post.new("/switch/#{template}"))
-					response.status = res.code
-					response.write res.body
-      				r.halt
+					respond(r, response, res.body, res.code)
 				end
 			end
 
 			#GET /switch
 			r.get do
 				res = forward_request(Net::HTTP::Get.new("/switch"))
-				response.status = res.code
-				response.write res.body
-      			r.halt
+				respond(r, response, res.body, res.code)
 			end
 		end
 
 		# /templates
 		r.on "templates" do
-			if(login["tier"] < 1)
-				response.status = 403
-				response.write "Permission denied!"
-				r.halt
+			if(login_tier < 1)
+				respond_permission_denied(r, response)
 			end
 
 			# GET /templates/key
 			r.get "key" do
-				sshkey = get_new_templates_sshkey(login["name"]) 
+				sshkey = get_new_templates_sshkey(login_name) 
 				if not sshkey
-					response.status = 500
-					response.write "internal error"
-					r.halt
+					respond(r, response, "internal error!", 500)
 				end
-				response.write sshkey
-				r.halt
+				respond(r, response, sshkey)
 			end
 
 			# GET /templates
 			r.get do
 				res = forward_request(Net::HTTP::Get.new("/templates/"))
-				response.status = res.code
-				response.write res.body
-      			r.halt
+				respond(r, response, res.body, res.code)
 			end
 		end
 
@@ -96,10 +92,8 @@ class App < Roda
 		r.on "users" do
 			# /users/new
 			r.on "new" do
-				if(login["tier"] < 3)
-					response.status = 403
-					response.write "Permission denied!"
-					r.halt
+				if(login_tier < 3)
+					respond_permission_denied(r, response)
 				end
 
 				# /users/new/[name]
@@ -107,73 +101,48 @@ class App < Roda
 					r.post do
 						apikey = @users.create_user(name)
 						if apikey.nil?
-							response.write "username taken!"
-							response.status = 403
-							r.halt
+							respond(r, response, "username taken!", 400)
 						end
-
-						response.write apikey
-						response.status = 200
-						r.halt
+						respond(r, response, apikey)
 					end
 				end
 			end
 
 			# /users/[name]
 			r.is String do |name|
-				edituser = @users.get_user_by_name(name)
-				if edituser.nil?
-					response.status = 404
-					response.write "username not found!"
-					r.halt
+				user_name, user_tier = @users.get_user_by_name(name)
+				if user_name.nil?
+					respond(r, response, "username not found!", 404)
 				end
 
 				# GET /users/[name]
 				r.get do
 					# only tier 2 should inspect other users
-					if edituser["name"] != login["name"]
-						if(user.tier < 2)
-							response.status = 403
-							response.write "Permission denied!"
-							r.halt
+					if user_name != login_name
+						if(login_tier < 2)
+							respond_permission_denied(r, response)
 						end
 					end
-					response.write edituser.to_json
-					response.status = 200
-					r.halt
+					respond(r, response, { "name" => user_name, "tier" => user_tier }.to_json)
 				end
 
-				if(login["tier"] < 2 || login["tier"] <= edituser["tier"])
-					response.status = 403
-					response.write "Permission denied!"
-					r.halt
+				if(login_tier < 2 || login_tier <= user_tier)
+					respond_permission_denied(r, response)
 				end
 
 				# POST /users/[name] -> update user
 				r.post do
-					u = JSON.parse(r.body.read)
-					if u["name"] != edituser["name"]
-						@users.rename_user(edituser["name"], u["name"])
-					end
-					@users.update_user(u)
-					response.status = 200
-					response.write "kek"
-					r.halt
-					
+					respond(r, response, "not ready yet ...", 404)
 				end
 			end
 
-			if(login["tier"] < 2)
-				response.status = 403
-				response.write "Permission denied!"
-				r.halt
+			if(login_tier < 2)
+				respond_permission_denied(r, response)
 			end
 
 			# GET /users
 			r.get do
-				response.status = 200
-				response.write @users.get_all_users_as_hash().to_json
-      			r.halt
+				respond(r, response, @users.get_all_users_as_hash().to_json)
 			end
 		end
 
@@ -183,39 +152,28 @@ class App < Roda
 			r.is String do |username|
 				# GET /key/[username]
 				r.get do
-					if(login["tier"] < 2)
-						response.status = 403
-						response.write "Permission denied!"
-						r.halt
+					if(login_tier < 2)
+						respond_permission_denied(r, response)
 					end
 
-					edituser = @users.get_user_by_name(username)
-					# print edituser.nil?
-					if(edituser.nil?)
-						response.status = 404
-						response.write "username not found!"
-						r.halt
+					user_name, user_tier = @users.get_user_by_name(username)
+					if(user_name.nil?)
+						respond(r, response, "username not found!", 404)
 					end
 
-					if(login["name"] == edituser["name"])
-						response.status = 400
-						response.write "cant reset own apikey here, use GET /key instead!"
-						r.halt
+					if(login_name == user_name)
+						respond(r, response, "cant reset own apikey here, use GET /key instead!", 400)
 					end
 
-					remove_templates_sshkey(edituser["name"])
-					response.write @users.get_new_apikey(edituser["name"])
-					response.status = 200
-					r.halt
+					remove_templates_sshkey(user_name)
+					respond(r, response, @users.get_new_apikey(user_name))
 				end
 			end
 
 			# GET /key
 			r.get do
-				remove_templates_sshkey(login["name"])
-				response.write @users.get_new_apikey(login["name"])
-				response.status = 200
-				r.halt
+				remove_templates_sshkey(login_name)
+				respond(r, response, @users.get_new_apikey(login_name))
 			end
 		end
 
