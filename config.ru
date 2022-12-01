@@ -40,6 +40,14 @@ class App < Roda
 		respond(req, res, "permission denied!", 403)
 	end
 
+	def clean_username(name)
+		name.strip
+		if name.match(/[^a-z0-9_-]/)
+			return nil
+		end
+		return name
+	end
+
 	route do |r|
 		@users = Users.new()
 		login_name, login_tier = @users.get_user_by_apikey(env["HTTP_APIKEY"])
@@ -97,9 +105,13 @@ class App < Roda
 				end
 
 				# /users/new/[name]
-				r.is String do |name|
+				r.is String do |username|
+					username = clean_username(username)
+					if username.nil?
+						respond(r, response, "malformed parameter!", 400)
+					end
 					r.post do
-						apikey = @users.create_user(name)
+						apikey = @users.create_user(username)
 						if apikey.nil?
 							respond(r, response, "username taken!", 400)
 						end
@@ -108,14 +120,19 @@ class App < Roda
 				end
 			end
 
-			# /users/[name]
-			r.is String do |name|
-				user_name, user_tier = @users.get_user_by_name(name)
+			# /users/[username]
+			r.is String do |username|
+				username = clean_username(username)
+				if username.nil?
+					respond(r, response, "malformed parameter!", 400)
+				end
+				
+				user_name, user_tier = @users.get_user_by_name(username)
 				if user_name.nil?
 					respond(r, response, "username not found!", 404)
 				end
 
-				# GET /users/[name]
+				# GET /users/[username]
 				r.get do
 					# only tier 2 should inspect other users
 					if user_name != login_name
@@ -130,9 +147,26 @@ class App < Roda
 					respond_permission_denied(r, response)
 				end
 
-				# POST /users/[name] -> update user
+				# POST /users/[username]?[field]=[value] -> update user
 				r.post do
-					respond(r, response, "not ready yet ...", 404)
+					r.params.each do |key, value|
+						case key
+						when "tier"
+							@users.set_user_tier(user_name, value.to_i)
+						when "name"
+							n = clean_username(value)
+							if !n.nil?
+								@users.rename_user(user_name, n)
+							end
+						end
+					end
+					respond(r, response, "")
+				end
+
+				# DELETE /users/[username]
+				r.delete do
+					@users.remove_user(user_name)
+					respond(r, response, "user removed!")
 				end
 			end
 
@@ -150,6 +184,10 @@ class App < Roda
 		r.on "key" do
 			# /key/[username]
 			r.is String do |username|
+				username = clean_username(username)
+				if username.nil?
+					respond(r, response, "malformed parameter!", 400)
+				end
 				# GET /key/[username]
 				r.get do
 					if(login_tier < 2)

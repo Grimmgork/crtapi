@@ -78,9 +78,13 @@ class Users < FileLock
 		return nil
 	end
 
+	def username_taken?(name)
+		return !get_user_index_by_name(name).nil?
+	end
+
 	def rename_user(name, newname)
 		i = get_user_index_by_name(name)
-		if i.nil? || name == "root" #|| not get_user_index_by_name(newname).nil?
+		if i.nil? || name == "root" || username_taken?(newname)
 			return false
 		end
 		@users[i].name = newname
@@ -109,7 +113,7 @@ class Users < FileLock
 	end
 
 	def create_user(name)
-		if not get_user_index_by_name(name).nil?
+		if username_taken?(name)
 			return nil
 		end
 		@users.push(User.new(name, nil, 0))
