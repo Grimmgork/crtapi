@@ -55,11 +55,11 @@ class App < Roda
 
 	route do |r|
 		@users = Users.new()
-		login_name, login_tier = @users.get_user_by_apikey(env["HTTP_APIKEY"])
-
-		if login_name.nil?
+		login = @users.get_user_by_apikey(env["HTTP_APIKEY"])
+		unless login
 			respond_permission_denied(r, response)
 		end
+		login = OpenStruct.new(login)
 		
 		# /switch
 		r.on "switch" do
@@ -88,20 +88,17 @@ class App < Roda
 
 		# /templates
 		r.on "templates" do
-			if(login_tier < 1)
+			if(login.tier < 1)
 				response.status = 403
 				next "permission denied!"
 			end
 
 			# GET /templates/key
 			r.get "key" do
-				sshkey = get_new_templates_sshkey(login_name)
-				sshkey = nil
+				sshkey = get_new_templates_sshkey(login.name)
 				if sshkey.nil?
-					if 1 == 1
-						response.status = 500
-						next "internal error!"
-					end
+					response.status = 500
+					next "internal error!"
 				end
 				sshkey
 			end
@@ -118,7 +115,7 @@ class App < Roda
 		r.on "users" do
 			# /users/new
 			r.on "new" do
-				if(login_tier < 3)
+				if(login.tier < 3)
 					response.status = 403
 					next "permission denied!"
 				end
@@ -147,25 +144,26 @@ class App < Roda
 					next "malformed parameter!"
 				end
 
-				user_name, user_tier = @users.get_user_by_name(username)
-				unless user_name
+				user = @users.get_user_by_name(username)
+				unless user
 					response.status = 404
 					next "username not found!"
 				end
+				user = OpenStruct.new(user)
 
 				# GET /users/[username]
 				r.get do
 					# only tier 2 should inspect other users
-					if user_name != login_name
-						if(login_tier < 2)
+					if user.name != login.name
+						if(login.tier < 2)
 							response,status = 403
 							next "permission denied!"
 						end
 					end
-					{ "name" => user_name, "tier" => user_tier }.to_json
+					{ "name" => user.name, "tier" => user.tier }.to_json
 				end
 
-				if(login_tier < 2 || login_tier <= user_tier)
+				if(login.tier < 2 || login.tier <= user.tier)
 					response,status = 403
 					next "permission denied!"
 				end
@@ -175,25 +173,25 @@ class App < Roda
 					r.params.each do |key, value|
 						case key
 						when "tier"
-							@users.set_user_tier(user_name, value.to_i)
+							@users.set_user_tier(user.name, value.to_i)
 						when "name"
-							n = clean_username(value)
-							if !n.nil?
-								@users.rename_user(user_name, n)
+							if n = clean_username(value)
+								@users.rename_user(user.name, n)
+								user.name = n
 							end
 						end
 					end
-					"done!"
+					@users.get_user_by_name(user.name).to_json
 				end
 
 				# DELETE /users/[username]
 				r.delete do
-					@users.remove_user(user_name)
+					@users.remove_user(user.name)
 					"user removed!"
 				end
 			end
 
-			if(login_tier < 2)
+			if(login.tier < 2)
 				response,status = 403
 				next "permission denied!"
 			end
@@ -215,31 +213,32 @@ class App < Roda
 
 				# GET /key/[username]
 				r.get do
-					if login_tier < 2
+					if login.tier < 2
 						response.status = 403
 						next "permission denied!"
 					end
 
-					user_name, user_tier = @users.get_user_by_name(username)
-					unless user_name
+					user = @users.get_user_by_name(username)
+					unless user
 						response.status = 404
 						next "username not found!"
 					end
+					user = OpenStruct.new(user)
 
-					if login_name == user_name
+					if login.name == user.name
 						response.static = 400
 						next "cant reset own apikey here, use GET /key instead!"
 					end
 
-					remove_templates_sshkey(user_name)
-					@users.get_new_apikey(user_name)
+					remove_templates_sshkey(user.name)
+					@users.get_new_apikey(user.name)
 				end
 			end
 
 			# GET /key
 			r.get do
-				remove_templates_sshkey(login_name)
-				@users.get_new_apikey(login_name)
+				remove_templates_sshkey(login.name)
+				@users.get_new_apikey(login.name)
 			end
 		end
 	ensure

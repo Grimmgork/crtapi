@@ -40,8 +40,7 @@ class Users < FileLock
 	def get_all_users_as_hash
 		res = []
 		@users.each_with_index do |u, i|
-			name, tier = get_user_data(i)
-			res.push({"name" => name, "tier" => tier})
+			res.push(get_user_data(i))
 		end
 		return res
 	end
@@ -66,7 +65,8 @@ class Users < FileLock
 		if index.nil?
 			return nil
 		end
-		return @users[index].name, @users[index].tier
+		user = @users[index]
+		return { "name" => user.name, "tier" => user.tier }
 	end
 
 	def get_user_index_by_name(name)
