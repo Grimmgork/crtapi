@@ -60,6 +60,10 @@ class App < Roda
 		r.on "switch" do
 			#/switch/[template]
 			r.is String do |template|
+				template = clean_username(template)
+				if template.nil?
+					respond(r, response, "malformed parameter!", 400)
+				end
 				#POST /switch/[template]
 				r.post do
 					res = forward_request(Net::HTTP::Post.new("/switch/#{template}"))
@@ -126,7 +130,7 @@ class App < Roda
 				if username.nil?
 					respond(r, response, "malformed parameter!", 400)
 				end
-				
+
 				user_name, user_tier = @users.get_user_by_name(username)
 				if user_name.nil?
 					respond(r, response, "username not found!", 404)

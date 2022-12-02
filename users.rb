@@ -15,9 +15,9 @@ class Users < FileLock
 			@users.push(User.new(v[0], v[1], v[2].to_i))
 		end
 
-		# make sure there is always a root user with tier 3
+		# make sure there is always a almighty root user
 		if create_user("root")
-			@users[get_user_index_by_name("root")].tier = 3
+			@users[get_user_index_by_name("root")].tier = 99
 		end
 	end
 
@@ -94,6 +94,8 @@ class Users < FileLock
 
 	def set_user_tier(name, tier)
 		i = get_user_index_by_name(name)
+		if tier < 0 then tier = 0 end
+		if tier > 3 then tier = 3 end
 		if i.nil? || name == "root"
 			return false
 		end
