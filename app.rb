@@ -40,6 +40,11 @@ class App < Roda
 		respond(req, res, "permission denied!", 403)
 	end
 
+	def respondtest
+		puts "kek"
+		return "kek"
+	end
+
 	def clean_username(name)
 		name.strip
 		if name.match(/[^a-z0-9_-]/)
@@ -60,44 +65,52 @@ class App < Roda
 		r.on "switch" do
 			# /switch/[template]
 			r.is String do |template|
-				template = clean_username(template)
-				if template.nil?
-					respond(r, response, "malformed parameter!", 400)
+				unless template = clean_username(template)
+					response.status = 400
+					next "malformed parameter!"
 				end
 
 				# POST /switch/[template]
 				r.post do
 					res = forward_request(Net::HTTP::Post.new("/switch/#{template}"))
-					respond(r, response, res.body, res.code)
+					response.status = res.code
+					res.body
 				end
 			end
 
 			# GET /switch
 			r.get do
 				res = forward_request(Net::HTTP::Get.new("/switch"))
-				respond(r, response, res.body, res.code)
+				response.status = res.code
+				res.body
 			end
 		end
 
 		# /templates
 		r.on "templates" do
 			if(login_tier < 1)
-				respond_permission_denied(r, response)
+				response.status = 403
+				next "permission denied!"
 			end
 
 			# GET /templates/key
 			r.get "key" do
-				sshkey = get_new_templates_sshkey(login_name) 
-				if not sshkey
-					respond(r, response, "internal error!", 500)
+				sshkey = get_new_templates_sshkey(login_name)
+				sshkey = nil
+				if sshkey.nil?
+					if 1 == 1
+						response.status = 500
+						next "internal error!"
+					end
 				end
-				respond(r, response, sshkey)
+				sshkey
 			end
 
 			# GET /templates
 			r.get do
 				res = forward_request(Net::HTTP::Get.new("/templates/"))
-				respond(r, response, res.body, res.code)
+				response.status = res.code
+				res.body
 			end
 		end
 
@@ -106,35 +119,38 @@ class App < Roda
 			# /users/new
 			r.on "new" do
 				if(login_tier < 3)
-					respond_permission_denied(r, response)
+					response.status = 403
+					next "permission denied!"
 				end
 
 				# /users/new/[name]
 				r.is String do |username|
-					username = clean_username(username)
-					if username.nil?
-						respond(r, response, "malformed parameter!", 400)
+					unless username = clean_username(username)
+						response.status = 400
+						next "malformed parameter!"
 					end
+
 					r.post do
-						apikey = @users.create_user(username)
-						if apikey.nil?
-							respond(r, response, "username taken!", 400)
+						unless apikey = @users.create_user(username)
+							response.status = 400
+							next "username taken!"
 						end
-						respond(r, response, apikey)
+						apikey
 					end
 				end
 			end
 
 			# /users/[username]
 			r.is String do |username|
-				username = clean_username(username)
-				if username.nil?
-					respond(r, response, "malformed parameter!", 400)
+				unless username = clean_username(username)
+					response.status = 400
+					next "malformed parameter!"
 				end
 
 				user_name, user_tier = @users.get_user_by_name(username)
-				if user_name.nil?
-					respond(r, response, "username not found!", 404)
+				unless user_name
+					response.status = 404
+					next "username not found!"
 				end
 
 				# GET /users/[username]
@@ -142,14 +158,16 @@ class App < Roda
 					# only tier 2 should inspect other users
 					if user_name != login_name
 						if(login_tier < 2)
-							respond_permission_denied(r, response)
+							response,status = 403
+							next "permission denied!"
 						end
 					end
-					respond(r, response, { "name" => user_name, "tier" => user_tier }.to_json)
+					{ "name" => user_name, "tier" => user_tier }.to_json
 				end
 
 				if(login_tier < 2 || login_tier <= user_tier)
-					respond_permission_denied(r, response)
+					response,status = 403
+					next "permission denied!"
 				end
 
 				# POST /users/[username]?[field]=[value] -> update user
@@ -165,23 +183,24 @@ class App < Roda
 							end
 						end
 					end
-					respond(r, response, "")
+					"done!"
 				end
 
 				# DELETE /users/[username]
 				r.delete do
 					@users.remove_user(user_name)
-					respond(r, response, "user removed!")
+					"user removed!"
 				end
 			end
 
 			if(login_tier < 2)
-				respond_permission_denied(r, response)
+				response,status = 403
+				next "permission denied!"
 			end
 
 			# GET /users
 			r.get do
-				respond(r, response, @users.get_all_users_as_hash().to_json)
+				@users.get_all_users_as_hash().to_json
 			end
 		end
 
@@ -189,35 +208,38 @@ class App < Roda
 		r.on "key" do
 			# /key/[username]
 			r.is String do |username|
-				username = clean_username(username)
-				if username.nil?
-					respond(r, response, "malformed username!", 400)
+				unless username = clean_username(username)
+					response.status = 400
+					next "malformed parameter!"
 				end
 
 				# GET /key/[username]
 				r.get do
-					if(login_tier < 2)
-						respond_permission_denied(r, response)
+					if login_tier < 2
+						response.status = 403
+						next "permission denied!"
 					end
 
 					user_name, user_tier = @users.get_user_by_name(username)
-					if(user_name.nil?)
-						respond(r, response, "username not found!", 404)
+					unless user_name
+						response.status = 404
+						next "username not found!"
 					end
 
-					if(login_name == user_name)
-						respond(r, response, "cant reset own apikey here, use GET /key instead!", 400)
+					if login_name == user_name
+						response.static = 400
+						next "cant reset own apikey here, use GET /key instead!"
 					end
 
 					remove_templates_sshkey(user_name)
-					respond(r, response, @users.get_new_apikey(user_name))
+					@users.get_new_apikey(user_name)
 				end
 			end
 
 			# GET /key
 			r.get do
 				remove_templates_sshkey(login_name)
-				respond(r, response, @users.get_new_apikey(login_name))
+				@users.get_new_apikey(login_name)
 			end
 		end
 	ensure
